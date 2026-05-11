@@ -90,7 +90,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .node-item { display: flex; align-items: center; gap: 9px; padding: 7px 14px 7px 20px; cursor: grab; transition: background .1s; user-select: none; }
 .node-item:hover { background: var(--surface2); }
 .node-item:active { cursor: grabbing; }
-.ni-icon { width: 26px; height: 26px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+.ni-icon { width: 26px; height: 26px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; white-space: nowrap; line-height: 1; font-family: ui-monospace, 'Cascadia Code', monospace; }
 .ni-info { flex: 1; min-width: 0; }
 .ni-name { font-size: 12.5px; font-weight: 500; color: var(--text); }
 .ni-desc { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -139,7 +139,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   to   { box-shadow: 0 0 18px 6px var(--acc-glow), var(--shadow-sm); }
 }
 .node-hdr { display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px; }
-.node-type-ic { width: 22px; height: 22px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+.node-type-ic { width: 22px; height: 22px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; white-space: nowrap; line-height: 1; font-family: ui-monospace, 'Cascadia Code', monospace; }
 .node-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-badge { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 8px; display: none; flex-shrink: 0; }
 .exec-ok  .node-badge { display: block; background: var(--green); color: #fff; }
@@ -690,7 +690,7 @@ const NT = {
   },
   'code': {
     key: 'n8n-nodes-base.code', label: 'Code', cat: 'Core',
-    color: '#f39c12', icon: '\uFF1C/\uFF1E',
+    color: '#f39c12', icon: '</>',
     desc: 'Esegui codice JavaScript o Python personalizzato'
   },
   'set': {
@@ -1062,7 +1062,7 @@ function paintNode(el, n) {
       <span class="node-kebab-dot" aria-hidden="true"></span><span class="node-kebab-dot" aria-hidden="true"></span><span class="node-kebab-dot" aria-hidden="true"></span>
     </button>
     <div class="node-hdr">
-      <div class="node-type-ic" style="background:${nt.color}22;color:${nt.color}" aria-hidden="true">${nt.icon}</div>
+      <div class="node-type-ic" style="background:${nt.color}22;color:${nt.color}" aria-hidden="true">${esc(nt.icon)}</div>
       <div class="node-title">${esc(n.name)}</div>
       <div class="node-badge">${res?.status==='ok'?cnt??'✓':'!'}</div>
     </div>
@@ -1381,7 +1381,7 @@ function renderSidebar() {
     if (open) {
       html += items.map(nt => `
         <div class="node-item" draggable="true" data-drag-type="${nt.key}" title="${esc(nt.desc)}">
-          <div class="ni-icon" style="background:${nt.color}20;color:${nt.color}" aria-hidden="true">${nt.icon}</div>
+          <div class="ni-icon" style="background:${nt.color}20;color:${nt.color}" aria-hidden="true">${esc(nt.icon)}</div>
           <div class="ni-info">
             <div class="ni-name">${esc(nt.label)}</div>
             <div class="ni-desc">${esc(nt.desc)}</div>
@@ -2007,7 +2007,7 @@ function renderLibModal(search='') {
   );
   grid.innerHTML = items.map(nt => `
     <div class="lib-item" data-lib-type="${esc(nt.key)}" role="button" tabindex="0" aria-label="Aggiungi nodo ${nt.label}">
-      <div class="ni-icon" style="background:${nt.color}20;color:${nt.color};width:30px;height:30px" aria-hidden="true">${nt.icon}</div>
+      <div class="ni-icon" style="background:${nt.color}20;color:${nt.color};width:30px;height:30px" aria-hidden="true">${esc(nt.icon)}</div>
       <div>
         <div class="lib-item-name">${esc(nt.label)}</div>
         <div class="lib-item-cat">${esc(nt.cat)}</div>
@@ -2887,7 +2887,7 @@ function initEvents() {
     picker.innerHTML = trigs.map(n => {
       const nt = ntByFullKey(n.type);
       return `<div class="trig-opt" data-trig-id="${n.id}">
-        <div style="width:22px;height:22px;border-radius:4px;background:${nt.color}20;color:${nt.color};display:flex;align-items:center;justify-content:center;font-size:12px">${nt.icon}</div>
+        <div style="width:22px;height:22px;border-radius:4px;background:${nt.color}20;color:${nt.color};display:flex;align-items:center;justify-content:center;font-size:10px;white-space:nowrap;line-height:1;font-family:ui-monospace,'Cascadia Code',monospace">${esc(nt.icon)}</div>
         <div><div class="trig-opt-name">${esc(n.name)}</div><div class="trig-opt-type">${esc(nt.label)}</div></div>
       </div>`;
     }).join('');
