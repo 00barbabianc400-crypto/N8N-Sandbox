@@ -120,6 +120,20 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .wf-node.exec-ok   { border-color: var(--green); }
 .wf-node.exec-err  { border-color: var(--red); }
 .wf-node.disabled  { opacity: .45; }
+/* Menu azioni: tre punti in alto a destra (hover o nodo selezionato) */
+.node-kebab {
+  position: absolute; top: -8px; right: 10px; z-index: 12;
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  width: 26px; height: 20px; padding: 0; margin: 0;
+  border: 1px solid var(--border2); border-radius: 6px;
+  background: var(--surface2); box-shadow: var(--shadow-sm);
+  cursor: pointer; opacity: 0; pointer-events: none;
+  transition: opacity .12s, background .12s, border-color .12s;
+}
+.node-kebab:hover { background: var(--surface3); border-color: rgba(255,255,255,.2); }
+.node-kebab-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.wf-node:hover .node-kebab,
+.wf-node.selected .node-kebab { opacity: 1; pointer-events: auto; }
 @keyframes node-run {
   from { box-shadow: 0 0 0 2px var(--acc-glow), var(--shadow-sm); }
   to   { box-shadow: 0 0 18px 6px var(--acc-glow), var(--shadow-sm); }
@@ -638,7 +652,7 @@ code { color: var(--accent); font-family: monospace; font-size: 11px; }
 </div>
 
 <div id="ctx-menu" role="menu" aria-label="Azioni nodo">
-  <div class="ctx-hint"><strong>Clic sinistro</strong> sul nodo per questo menu. <strong>Clic destro</strong> apre il pannello parametri.</div>
+  <div class="ctx-hint"><strong>⋯</strong> sul nodo (in alto a destra) per questo menu. <strong>Clic destro</strong> sul nodo apre il pannello parametri.</div>
   <div class="ctx-item" role="menuitem" data-ctx="test">▶ &nbsp;Test nodo</div>
   <div class="ctx-item" role="menuitem" data-ctx="copy">⧉ &nbsp;Duplica</div>
   <div class="ctx-item" role="menuitem" data-ctx="open">✎ &nbsp;Configura</div>
@@ -676,7 +690,7 @@ const NT = {
   },
   'code': {
     key: 'n8n-nodes-base.code', label: 'Code', cat: 'Core',
-    color: '#f39c12', icon: '</>',
+    color: '#f39c12', icon: '\uFF1C/\uFF1E',
     desc: 'Esegui codice JavaScript o Python personalizzato'
   },
   'set': {
@@ -871,33 +885,92 @@ function jsonKeyPathsFromItems(items) {
   return out;
 }
 
+/** Output dell’ultima esecuzione sui soli parent di `toId` (solo anteprima pannello; non modifica `state.exec`). */
+function upstreamSnapshotOutputItems(toId) {
+  const ins = state.conns.filter(c => c.to === toId);
+  if (!ins.length) return null;
+  const sorted = [...ins].sort((a, b) => String(a.from).localeCompare(String(b.from)));
+  const merged = [];
+  for (const { from } of sorted) {
+    let out = state.exec.io[from]?.output;
+    if (!Array.isArray(out) || !out.length) {
+      const r = state.exec.res[from];
+      if (r?.status === 'ok' && Array.isArray(r.output) && r.output.length) out = r.output;
+    }
+    if (Array.isArray(out) && out.length) merged.push(...cloneItems(out));
+  }
+  return merged.length ? merged : null;
+}
+
 function buildIoSideColumnHtml(n, which) {
   const io = state.exec.io[n.id];
-  const title = which === 'input' ? 'Input' : 'Output';
-  if (!io) {
+  const title0 = which === 'input' ? 'Input' : 'Output';
+
+  if (which === 'output') {
+    if (!io) {
+      const hasUp = !!upstreamSnapshotOutputItems(n.id);
+      const emptyBody = hasUp
+        ? '<strong style="font-size:12px">Nessun output</strong>Esegui il workflow per calcolare l’output di questo nodo. In colonna <strong>Input</strong> vedi l’anteprima dai nodi a monte.'
+        : '<strong style="font-size:12px">Nessun dato</strong>Esegui il workflow, poi riapri il nodo: qui compariranno JSON e chip da trascinare.';
+      return `
+      <div class="io-side-hdr">${title0}</div>
+      <div class="io-side-inner">
+        <div class="io-empty" style="padding:14px 8px;font-size:11px">${emptyBody}</div>
+      </div>`;
+    }
+    const items = io.output;
+    const cnt = (items ?? []).length;
+    const paths = jsonKeyPathsFromItems(items);
+    const chips = paths.length
+      ? `<div class="io-hint" style="margin:0">Trascina nel centro (<strong>Parametri</strong>) sui campi espressione:</div>
+         <div class="json-chips" role="list">${paths.map(p =>
+           `<span class="json-chip" draggable="true" role="listitem" data-chip="${encodeURIComponent(p.expr)}" title="${esc(p.expr)}">${esc(p.short)}</span>`
+         ).join('')}</div>`
+      : `<div class="io-hint" style="margin:0;font-size:10px">Nessuna chiave nel primo item.</div>`;
+    const errNote = io.error
+      ? `<div class="io-hint" style="border-color:var(--red);color:var(--red);margin:0">Errore: ${esc(io.error)}</div>` : '';
+    const jsonStr = JSON.stringify(items ?? [], null, 2);
     return `
-      <div class="io-side-hdr">${title}</div>
+    <div class="io-side-hdr">${title0} · ${cnt} item${cnt !== 1 ? 's' : ''}</div>
+    <div class="io-side-inner">
+      ${chips}
+      ${errNote}
+      <div class="io-pre-wrap io-pre-wrap--side"><pre class="io-pre" tabindex="0">${esc(jsonStr)}</pre></div>
+    </div>`;
+  }
+
+  let items = null;
+  let inferred = false;
+  if (io) items = io.input;
+  else {
+    const up = upstreamSnapshotOutputItems(n.id);
+    if (up) { items = up; inferred = true; }
+  }
+  if (!items || !items.length) {
+    return `
+      <div class="io-side-hdr">${title0}</div>
       <div class="io-side-inner">
         <div class="io-empty" style="padding:14px 8px;font-size:11px"><strong style="font-size:12px">Nessun dato</strong>Esegui il workflow, poi riapri il nodo: qui compariranno JSON e chip da trascinare.</div>
       </div>`;
   }
-  const items = which === 'input' ? io.input : io.output;
-  const cnt = (items ?? []).length;
-  const paths = which === 'input' ? jsonKeyPathsFromItems(items) : jsonKeyPathsFromItems(items);
+  const cnt = items.length;
+  const hdr = inferred ? `${title0} · anteprima · ${cnt} item${cnt !== 1 ? 's' : ''}` : `${title0} · ${cnt} item${cnt !== 1 ? 's' : ''}`;
+  const inferredNote = inferred
+    ? `<div class="io-hint" style="margin:0 0 6px;border-left:2px solid var(--accent);padding-left:8px;font-size:10px;color:var(--muted)">Anteprima dall’output dei nodi collegati a monte (questo nodo non è stato eseguito nell’ultima corsa).</div>`
+    : '';
+  const paths = jsonKeyPathsFromItems(items);
   const chips = paths.length
     ? `<div class="io-hint" style="margin:0">Trascina nel centro (<strong>Parametri</strong>) sui campi espressione:</div>
        <div class="json-chips" role="list">${paths.map(p =>
          `<span class="json-chip" draggable="true" role="listitem" data-chip="${encodeURIComponent(p.expr)}" title="${esc(p.expr)}">${esc(p.short)}</span>`
        ).join('')}</div>`
     : `<div class="io-hint" style="margin:0;font-size:10px">Nessuna chiave nel primo item.</div>`;
-  const errNote = io.error && which === 'output'
-    ? `<div class="io-hint" style="border-color:var(--red);color:var(--red);margin:0">Errore: ${esc(io.error)}</div>` : '';
   const jsonStr = JSON.stringify(items ?? [], null, 2);
   return `
-    <div class="io-side-hdr">${title} · ${cnt} item${cnt !== 1 ? 's' : ''}</div>
+    <div class="io-side-hdr">${hdr}</div>
     <div class="io-side-inner">
+      ${inferredNote}
       ${chips}
-      ${errNote}
       <div class="io-pre-wrap io-pre-wrap--side"><pre class="io-pre" tabindex="0">${esc(jsonStr)}</pre></div>
     </div>`;
 }
@@ -985,6 +1058,9 @@ function paintNode(el, n) {
   const cnt = res?.output?.length ?? null;
   el.innerHTML = `
     <div class="port port-in"  data-port="in"  data-nid="${n.id}" aria-label="Input port"></div>
+    <button type="button" class="node-kebab" aria-label="Menu azioni nodo" aria-haspopup="true" title="Azioni nodo">
+      <span class="node-kebab-dot" aria-hidden="true"></span><span class="node-kebab-dot" aria-hidden="true"></span><span class="node-kebab-dot" aria-hidden="true"></span>
+    </button>
     <div class="node-hdr">
       <div class="node-type-ic" style="background:${nt.color}22;color:${nt.color}" aria-hidden="true">${nt.icon}</div>
       <div class="node-title">${esc(n.name)}</div>
@@ -1330,7 +1406,7 @@ function renderCfgPanel() {
 
   if (state.panel.tab === 'input' || state.panel.tab === 'output') state.panel.tab = 'params';
 
-  const hasIo = !!state.exec.io[n.id];
+  const hasIo = !!state.exec.io[n.id] || !!upstreamSnapshotOutputItems(n.id);
   panel.classList.toggle('cfg-panel--triple', hasIo);
 
   const left = document.getElementById('cp-io-left');
@@ -1600,6 +1676,7 @@ function buildFormRespP(n, p) {
   const isExp = msg.startsWith('=');
   const sampleJson = state.exec.io[n.id]?.input?.[0]?.json
     ?? state.exec.io[n.id]?.output?.[0]?.json
+    ?? upstreamSnapshotOutputItems(n.id)?.[0]?.json
     ?? { ticket_id: 'TCK-0001', stato: 'Aperto', nome: 'Mario', email: 'esempio@scuola.it' };
   let previewBody = msg;
   if (isExp) {
@@ -1630,7 +1707,7 @@ function buildFormRespP(n, p) {
     <div class="sep"></div>
     <div class="fg">
       <label class="fl">👁 Anteprima</label>
-      <div class="hint-box" style="margin-bottom:8px;font-size:10.5px">${state.exec.io[n.id] ? 'Usa dati Input di questo nodo dall’ultima esecuzione.' : 'Nessuna esecuzione: anteprima con JSON di esempio (ticket_id, stato, …).'}</div>
+      <div class="hint-box" style="margin-bottom:8px;font-size:10.5px">${state.exec.io[n.id] ? 'Usa dati Input di questo nodo dall’ultima esecuzione.' : upstreamSnapshotOutputItems(n.id) ? 'Anteprima dai dati a monte (ultima esecuzione sui nodi collegati).' : 'Nessuna esecuzione: anteprima con JSON di esempio (ticket_id, stato, …).'}</div>
       <div class="preview-box">
         <div class="preview-title">${esc(p.completionTitle??'Completamento')}</div>
         <div class="preview-msg">${esc(previewBody)}</div>
@@ -2561,7 +2638,7 @@ function initCanvas() {
       e.preventDefault(); return;
     }
 
-    if (node && !port) {
+    if (node && !port && !e.target.closest('.node-kebab')) {
       dragging = true; dragId = node.dataset.nid;
       nodeDragAnchor = { x: e.clientX, y: e.clientY };
       const n = nodeById(dragId);
@@ -2613,14 +2690,19 @@ function initCanvas() {
     panning = false; dragging = false; dragId = null;
   });
 
-  // Clic sinistro sul nodo → menu azioni (Configura / Duplica / …). Clic destro → pannello parametri.
+  // Menu azioni solo dal pulsante ⋯ sul nodo. Clic destro sul nodo → pannello parametri.
   ca.addEventListener('click', e => {
-    const node = e.target.closest('.wf-node');
-    const path = e.target.closest('.conn-path');
-    if (node && !e.target.closest('[data-port]')) {
-      if (nodeDragDistSq > 36) return;
-      openCtx(e.clientX, e.clientY, node.dataset.nid);
+    const kebab = e.target.closest('.node-kebab');
+    if (kebab) {
+      e.stopPropagation();
+      const node = kebab.closest('.wf-node');
+      if (node) {
+        const r = kebab.getBoundingClientRect();
+        openCtx(Math.round(r.left), Math.round(r.bottom + 4), node.dataset.nid);
+      }
+      return;
     }
+    const path = e.target.closest('.conn-path');
     if (path && e.detail === 1) {
       const i = +path.dataset.ci;
       if (confirm(`Eliminare la connessione?`)) dispatch('del-conn', { i });
@@ -2634,7 +2716,7 @@ function initCanvas() {
     dispatch('canvas-zoom', { f: e.deltaY < 0 ? 1.11 : .9, cx: e.clientX-r.left, cy: e.clientY-r.top });
   }, { passive: false });
 
-  // Tasto destro = pannello parametri (come n8n: apri editor). Sinistro = menu azioni (vedi handler click).
+  // Tasto destro = pannello parametri (come n8n: apri editor). Menu azioni dal pulsante ⋯ sul nodo.
   ca.addEventListener('contextmenu', e => {
     const node = e.target.closest('.wf-node');
     if (!node || e.target.closest('[data-port]')) return;
